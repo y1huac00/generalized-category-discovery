@@ -1,0 +1,1 @@
+methods.contrastive_training.contrastive_training --dataset_name 'cifar100' --batch_size 512 --grad_from_block 11 --epochs 200 --base_model vit_dino --num_workers 8 --use_ssb_splits 'True' --sup_con_weight 0.35 --weight_decay 5e-5 --contrast_unlabel_only 'False' --transform 'pytorch-cifar' --lr 0.1 --eval_funcs 'v1' 'v2'
