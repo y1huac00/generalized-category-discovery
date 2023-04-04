@@ -25,6 +25,7 @@ from config import exp_root, dino_pretrain_path
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
+os.chdir('/userhome/cs/yihuac/finalproject/generalized-category-discovery/')
 
 class SupConLoss(torch.nn.Module):
     """Supervised Contrastive Learning: https://arxiv.org/pdf/2004.11362.pdf.
@@ -363,6 +364,10 @@ if __name__ == "__main__":
     parser.add_argument('--sup_con_weight', type=float, default=0.5)
     parser.add_argument('--n_views', default=2, type=int)
     parser.add_argument('--contrast_unlabel_only', type=str2bool, default=False)
+    print('--------------------------------------------')
+    print('--------------------------------------------')
+    print('--------------------------------------------')
+    print('--------------------------------------------')
 
     # ----------------------
     # INIT
@@ -386,8 +391,15 @@ if __name__ == "__main__":
         args.crop_pct = 0.875
         pretrain_path = dino_pretrain_path
 
+        print('--------------------------------------------')
+        print('--------------------------------------------')
+        print('--------------------------------------------')
+        print('--------------------------------------------')
+        print('--------------------------------------------')
+        print('--------------------------------------------')
+        print('--------------------------------------------')
+        print('--------------------------------------------')
         model = vits.__dict__['vit_base']()
-
         state_dict = torch.load(pretrain_path, map_location='cpu')
         model.load_state_dict(state_dict)
 

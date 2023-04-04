@@ -1,0 +1,5 @@
+Experiment saved to: experiments/testing/metric_learn_gcd/log/(02.04.2023_|_16.172)
+['metric_learn_gcd']
+Namespace(batch_size=128, num_workers=16, eval_funcs=['v1', 'v2'], warmup_model_dir=None, model_name='vit_dino', dataset_name='cifar10', prop_train_labels=0.5, use_ssb_splits=True, grad_from_block=11, lr=0.1, save_best_thresh=None, gamma=0.1, momentum=0.9, weight_decay=5e-05, epochs=200, exp_root='experiments/testing/', transform='imagenet', seed=1, base_model='vit_dino', temperature=1.0, sup_con_weight=0.35, n_views=2, contrast_unlabel_only=False, image_size=32, train_classes=range(0, 5), unlabeled_classes=range(5, 10), num_labeled_classes=5, num_unlabeled_classes=5, cuda=True, log_dir='experiments/testing/metric_learn_gcd/log/(02.04.2023_|_16.172)', model_dir='experiments/testing/metric_learn_gcd/log/(02.04.2023_|_16.172)/checkpoints', model_path='experiments/testing/metric_learn_gcd/log/(02.04.2023_|_16.172)/checkpoints/model.pt', writer=<torch.utils.tensorboard.writer.SummaryWriter object at 0x1504d73698b0>)
+Using evaluation function v1 to print results
+testtttt-131------------------------------
