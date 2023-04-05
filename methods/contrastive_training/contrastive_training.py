@@ -177,7 +177,7 @@ def train(projection_head, model, train_loader, test_loader, unlabelled_train_lo
 
     sup_con_crit = SupConLoss()
     best_test_acc_lab = 0
-
+    # args.model_path = './testing_cifar10.pt'
     for epoch in range(args.epochs):
 
         loss_record = AverageMeter()
@@ -398,6 +398,7 @@ if __name__ == "__main__":
 
         # NOTE: Hardcoded image size as we do not finetune the entire ViT model
         args.image_size = 224
+        # args.image_size = 40
         args.feat_dim = 768
         args.num_mlp_layers = 3
         args.mlp_out_dim = 65536
