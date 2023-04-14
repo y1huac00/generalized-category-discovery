@@ -3,14 +3,15 @@ import pandas as pd
 import numpy as np
 from copy import deepcopy
 from scipy import io as mat_io
+import sys
 
 from torchvision.datasets.folder import default_loader
 from torch.utils.data import Dataset
+sys.path.insert(1, '/userhome/cs/yihuac/finalproject/generalized-category-discovery/data')
+from data_utils import subsample_instances
 
-from data.data_utils import subsample_instances
-
-car_root = "/work/sagar/datasets/stanford_car/cars_{}/"
-meta_default_path = "/work/sagar/datasets/stanford_car/devkit/cars_{}.mat"
+car_root = "/userhome/cs/yihuac/finalproject/generalized-category-discovery/datasets/stanford_car/cars_{}/"
+meta_default_path = "/userhome/cs/yihuac/finalproject/generalized-category-discovery/datasets/stanford_car/devkit/cars_{}.mat"
 
 class CarsDataset(Dataset):
     """
@@ -32,7 +33,9 @@ class CarsDataset(Dataset):
         if not isinstance(metas, str):
             raise Exception("Train metas must be string location !")
         labels_meta = mat_io.loadmat(metas)
-
+        print(labels_meta)
+        print(labels_meta['annotations'])
+        print(labels_meta['annotations'][0])
         for idx, img_ in enumerate(labels_meta['annotations'][0]):
             if limit:
                 if idx > limit:

@@ -95,12 +95,18 @@ def get_train_val_indices(train_dataset, val_split=0.2):
 
 
 def get_cifar_10_datasets(train_transform, test_transform, train_classes=(0, 1, 8, 9),
-                       prop_train_labels=0.8, split_train_val=False, seed=0):
+                       prop_train_labels=0.8, split_train_val=False, seed=0, args=None):
 
     np.random.seed(seed)
 
     # Init entire training set
-    whole_training_set = CustomCIFAR10(root=cifar_10_root, transform=train_transform, train=True)
+    original_whole_training_set = CustomCIFAR10(root=cifar_10_root, transform=train_transform, train=True)
+    whole_training_set = None
+    if args.mini:
+        subsample_indices = subsample_instances(deepcopy(original_whole_training_set), prop_indices_to_subsample=0.1)
+        whole_training_set = subsample_dataset(deepcopy(original_whole_training_set), subsample_indices)
+    else:
+        whole_training_set = original_whole_training_set
 
     # Get labelled training set which has subsampled classes, then subsample some indices from that
     train_dataset_labelled = subsample_classes(deepcopy(whole_training_set), include_classes=train_classes)
@@ -115,10 +121,17 @@ def get_cifar_10_datasets(train_transform, test_transform, train_classes=(0, 1, 
 
     # Get unlabelled data
     unlabelled_indices = set(whole_training_set.uq_idxs) - set(train_dataset_labelled.uq_idxs)
-    train_dataset_unlabelled = subsample_dataset(deepcopy(whole_training_set), np.array(list(unlabelled_indices)))
+    train_dataset_unlabelled = None
+    if args.mini:
+        train_dataset_unlabelled = subsample_dataset(deepcopy(original_whole_training_set), np.array(list(unlabelled_indices)))
+    else:
+        train_dataset_unlabelled = subsample_dataset(deepcopy(whole_training_set), np.array(list(unlabelled_indices)))
 
     # Get test set for all classes
     test_dataset = CustomCIFAR10(root=cifar_10_root, transform=test_transform, train=False)
+    if args.mini:
+        subsample_indices = subsample_instances(test_dataset, prop_indices_to_subsample=0.1)
+        test_dataset = subsample_dataset(test_dataset, subsample_indices)
 
     # Either split train into train and val or use test set as val
     train_dataset_labelled = train_dataset_labelled_split if split_train_val else train_dataset_labelled
@@ -135,12 +148,18 @@ def get_cifar_10_datasets(train_transform, test_transform, train_classes=(0, 1, 
 
 
 def get_cifar_100_datasets(train_transform, test_transform, train_classes=range(80),
-                       prop_train_labels=0.8, split_train_val=False, seed=0):
+                       prop_train_labels=0.8, split_train_val=False, seed=0, args=None):
 
     np.random.seed(seed)
 
     # Init entire training set
-    whole_training_set = CustomCIFAR100(root=cifar_100_root, transform=train_transform, train=True)
+    original_whole_training_set = CustomCIFAR100(root=cifar_100_root, transform=train_transform, train=True)
+    whole_training_set = None
+    if args.mini:
+        subsample_indices = subsample_instances(deepcopy(original_whole_training_set), prop_indices_to_subsample=0.1)
+        whole_training_set = subsample_dataset(deepcopy(original_whole_training_set), subsample_indices)
+    else:
+        whole_training_set = original_whole_training_set
 
     # Get labelled training set which has subsampled classes, then subsample some indices from that
     train_dataset_labelled = subsample_classes(deepcopy(whole_training_set), include_classes=train_classes)
@@ -155,10 +174,17 @@ def get_cifar_100_datasets(train_transform, test_transform, train_classes=range(
 
     # Get unlabelled data
     unlabelled_indices = set(whole_training_set.uq_idxs) - set(train_dataset_labelled.uq_idxs)
-    train_dataset_unlabelled = subsample_dataset(deepcopy(whole_training_set), np.array(list(unlabelled_indices)))
+    train_dataset_unlabelled = None
+    if args.mini:
+        train_dataset_unlabelled = subsample_dataset(deepcopy(original_whole_training_set), np.array(list(unlabelled_indices)))
+    else:
+        train_dataset_unlabelled = subsample_dataset(deepcopy(whole_training_set), np.array(list(unlabelled_indices)))
 
     # Get test set for all classes
     test_dataset = CustomCIFAR100(root=cifar_100_root, transform=test_transform, train=False)
+    if args.mini:
+        subsample_indices = subsample_instances(test_dataset, prop_indices_to_subsample=0.1)
+        test_dataset = subsample_dataset(test_dataset, subsample_indices)
 
     # Either split train into train and val or use test set as val
     train_dataset_labelled = train_dataset_labelled_split if split_train_val else train_dataset_labelled

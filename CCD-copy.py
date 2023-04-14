@@ -789,6 +789,23 @@ if __name__ == "__main__":
     args = parser.parse_args()
     device = torch.device('cuda:0')
 
+    args.dataset_name = 'cifar100'
+    args.batch_size = 256
+    args.grad_from_block = 11
+    args.epochs = 200
+    args.base_model = 'vit_dino'
+    args.num_workers = 4
+    args.use_ssb_splits = True
+    args.sup_con_weight = 0.35
+    args.weight_decay = 5e-5
+    args.contrast_unlabel_only = False
+    args.transform = 'imagenet'
+    args.lr = 0.1
+    args.eval_funcs = ['v1', 'v2']
+    args.num_unlabeled_classes_predicted = 100
+    args.warmup = 20
+    args.conf_new_supcon = True
+    args.mini = True
 
     args = get_class_splits(args)
 
