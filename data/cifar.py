@@ -156,7 +156,7 @@ def get_cifar_100_datasets(train_transform, test_transform, train_classes=range(
     original_whole_training_set = CustomCIFAR100(root=cifar_100_root, transform=train_transform, train=True)
     whole_training_set = None
     if args.mini:
-        subsample_indices = subsample_instances(deepcopy(original_whole_training_set), prop_indices_to_subsample=0.1)
+        subsample_indices = subsample_instances(deepcopy(original_whole_training_set), prop_indices_to_subsample=0.2)
         whole_training_set = subsample_dataset(deepcopy(original_whole_training_set), subsample_indices)
     else:
         whole_training_set = original_whole_training_set
@@ -183,7 +183,7 @@ def get_cifar_100_datasets(train_transform, test_transform, train_classes=range(
     # Get test set for all classes
     test_dataset = CustomCIFAR100(root=cifar_100_root, transform=test_transform, train=False)
     if args.mini:
-        subsample_indices = subsample_instances(test_dataset, prop_indices_to_subsample=0.1)
+        subsample_indices = subsample_instances(test_dataset, prop_indices_to_subsample=0.2)
         test_dataset = subsample_dataset(test_dataset, subsample_indices)
 
     # Either split train into train and val or use test set as val

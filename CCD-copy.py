@@ -337,6 +337,7 @@ def train_new(projection_head, model, train_loader, test_loader, unlabelled_trai
 
     sup_con_crit = SupConLoss()
     best_test_acc_lab = 0
+    best_all_acc = 0.0
     # args.model_path = './testing_cifar10.pt'
 
     cluster_centers_unlabeled_5 = []
@@ -345,7 +346,7 @@ def train_new(projection_head, model, train_loader, test_loader, unlabelled_trai
     means_feat_proto_10 = {}
     vector_old_classes = {}
     vector_unlabeled_clusters = []
-    C_star_previous = list(args.train_classes)  # set of seen classes at previous step
+    C_star_previous = list(args.labeled_classes)  # set of seen classes at previous step
     C_star = []  # set of seen classes at current step (including current new classes)
     C_new = []  # set of new classes of unlabeled set
     C_old = []  # set of old classes of unlabeled set
@@ -418,14 +419,14 @@ def train_new(projection_head, model, train_loader, test_loader, unlabelled_trai
                 sup_conf_feats = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)  # [labeled samples * 2, 65536]
                 sup_conf_feats = sup_conf_feats[mask_new_unlabeled[unlabeled_st_idx:unlabeled_batch_size]]
                 sup_conf_feats = sup_conf_feats[mask_confident_new_unlabeled[new_st_idx:new_batch_size]]
-
-                conf_sup_con_loss = sup_con_crit(sup_conf_feats, labels=conf_labels)
+                if conf_labels.size(dim=0) != 0:
+                    conf_sup_con_loss = sup_con_crit(sup_conf_feats, labels=conf_labels)
                 unlabeled_st_idx = unlabeled_batch_size
                 new_st_idx = new_batch_size
 
             # Total loss
             if epoch >= args.warmup:
-                loss = (1 - args.sup_con_weight-0.1) * contrastive_loss + (args.sup_con_weight+0.1) * (sup_con_loss + conf_sup_con_loss)
+                loss = (1 - args.sup_con_weight) * contrastive_loss + (args.sup_con_weight) * (sup_con_loss + conf_sup_con_loss)
             else:
                 loss = (1 - args.sup_con_weight) * contrastive_loss + args.sup_con_weight * sup_con_loss
 
@@ -445,8 +446,8 @@ def train_new(projection_head, model, train_loader, test_loader, unlabelled_trai
         with torch.no_grad():
 
             print('Testing on unlabelled examples in the training data...')
-            # if(epoch + 1) % args.warmup == 0:
-            if epoch == args.warmup - 1:
+            if(epoch + 1) % args.warmup == 0:
+            # if epoch == args.warmup - 1:
                 all_acc, old_acc, new_acc, cluster_centers_unlabeled, unlabeled_cluster_preds, unlabeled_feats = test_kmeans(model, unlabelled_train_loader,
                                                                                    epoch=epoch,
                                                                                    save_name='Train ACC Unlabelled',
@@ -489,8 +490,8 @@ def train_new(projection_head, model, train_loader, test_loader, unlabelled_trai
             # if epoch == 0:
             #     means_feat_proto_5, _ = generate_mean_var(model, train_loader_labeled, args)
             #     cluster_centers_unlabeled_5 = cluster_centers_unlabeled
-            # if(epoch + 1) % args.warmup == 0:
-            if epoch == args.warmup - 1:
+            if(epoch + 1) % args.warmup == 0:
+            # if epoch == args.warmup - 1:
                 means_feat_proto_10, _ = generate_mean_var(model, train_loader_labeled, args)
                 cluster_centers_unlabeled_10 = cluster_centers_unlabeled
                 # for i in means_feat_proto_5.keys():
@@ -556,9 +557,10 @@ def train_new(projection_head, model, train_loader, test_loader, unlabelled_trai
 
 
 
-            if old_acc_test > best_test_acc_lab:
+            # if old_acc_test > best_test_acc_lab:
+            if all_acc > best_all_acc:
 
-                print(f'Best ACC on old Classes on disjoint test set: {old_acc_test:.4f}...')
+                print(f'Best overall ACC on the unlabeled data set: {all_acc:.4f}...')
                 print('Best Train Accuracies: All {:.4f} | Old {:.4f} | New {:.4f}'.format(all_acc, old_acc,
                                                                                            new_acc))
 
@@ -568,7 +570,7 @@ def train_new(projection_head, model, train_loader, test_loader, unlabelled_trai
                 torch.save(projection_head.state_dict(), args.model_path[:-3] + f'_proj_head_best.pt')
                 print("projection head saved to {}.".format(args.model_path[:-3] + f'_proj_head_best.pt'))
 
-                best_test_acc_lab = old_acc_test
+                best_all_acc = all_acc
                 # TODO: if step = 1, save mean and variance for labeled data and confident unlabeled data.
                 # class_mean, class_var = generate_mean_var(model, train_loader_labeled, args)
                 # TODO: get confident unlabeled data
@@ -680,7 +682,7 @@ def generate_mean_var(model, train_loader_labeled, args):
     # print(all_labels.shape)
 
     print('Calculate Labeled Mean-Var')
-    for i in args.train_classes:
+    for i in args.labeled_classes:
         # print(i)
         # print(all_labels == i)
         this_feat = all_feat[all_labels == i]
@@ -717,7 +719,7 @@ def test_kmeans(model, test_loader,
 
         all_feats.append(feats.cpu().numpy())
         targets = np.append(targets, label.cpu().numpy())
-        mask = np.append(mask, np.array([True if x.item() in range(len(args.train_classes))
+        mask = np.append(mask, np.array([True if x.item() in range(len(args.labeled_classes))
                                          else False for x in label]))
 
     # -----------------------
@@ -725,7 +727,7 @@ def test_kmeans(model, test_loader,
     # -----------------------
     print('Fitting K-Means...')
     all_feats = np.concatenate(all_feats)
-    kmeans = KMeans(n_clusters=args.num_labeled_classes + args.num_unlabeled_classes, random_state=0).fit(all_feats)
+    kmeans = KMeans(n_clusters=args.num_unlabeled_classes_predicted, random_state=0).fit(all_feats)
     preds = kmeans.labels_
     cluster_centers = kmeans.cluster_centers_
     print('Done!')
@@ -741,6 +743,56 @@ def test_kmeans(model, test_loader,
         return all_acc, old_acc, new_acc, cluster_centers, preds, all_feats
     else:
         return all_acc, old_acc, new_acc, cluster_centers
+
+
+def check_dataset_classes(labeled_dataset, unlabeled_dataset, args):
+    # Return the set of actual classes. It is found that the original method to load CUB dataset would result in 0 instances for some classes in the labeled data set, causing further issue of the model.
+    # Hence, run this function to get the actual classes
+    print('original labeled classes', len(args.train_classes), args.train_classes)
+    print('original unlabeled old classes', len(args.train_classes), args.train_classes)
+    print('original unlabeled new classes', len(args.unlabeled_classes), args.unlabeled_classes)
+    if args.dataset_name == 'cub':
+        all_labels = set(labeled_dataset.data.target)
+    elif args.dataset_name =='cifar10' or args.dataset_name=='cifar100':
+        all_labels = set(labeled_dataset.targets)
+    labeled_classes = []
+    for i in args.train_classes:
+        if i in all_labels:
+            labeled_classes.append(i)
+
+    unlabeled_new_classes = list(args.unlabeled_classes)
+    unlabeled_old_classes = []
+    if args.dataset_name == 'cub':
+        all_labels = set(unlabeled_dataset.data.target)
+    elif args.dataset_name =='cifar10' or args.dataset_name=='cifar100':
+        all_labels = set(unlabeled_dataset.targets)
+
+    for i in args.train_classes:
+        if i in all_labels:
+            unlabeled_old_classes.append(i)
+
+    temp = unlabeled_old_classes.copy()
+    for i in unlabeled_old_classes:
+        if i not in labeled_classes:
+            # k = unlabeled_old_classes.pop(unlabeled_old_classes.index(i))
+            unlabeled_new_classes.append(i)
+            temp.remove(i)
+    unlabeled_old_classes = temp.copy()
+
+    print('updated labeled classes', len(labeled_classes), labeled_classes)
+    print('updated unlabeled old classes', len(unlabeled_old_classes), unlabeled_old_classes)
+    print('updated unlabeled new classes', len(unlabeled_new_classes), unlabeled_new_classes)
+
+    args.labeled_classes = labeled_classes
+    args.unlabeled_old_classes = unlabeled_old_classes
+    args.unlabeled_new_classes = unlabeled_new_classes
+    args.num_labeled_classes = len(labeled_classes)
+    args.num_unlabeled_old_classes = len(unlabeled_old_classes)
+    args.num_unlabeled_new_classes = len(unlabeled_new_classes)
+    args.num_unlabeled_classes_predicted = args.num_unlabeled_old_classes + args.num_unlabeled_new_classes
+
+    return args
+
 
 
 if __name__ == "__main__":
@@ -789,21 +841,21 @@ if __name__ == "__main__":
     args = parser.parse_args()
     device = torch.device('cuda:0')
 
-    args.dataset_name = 'cifar100'
-    args.batch_size = 256
+    args.dataset_name = 'cub'
+    args.batch_size = 128
     args.grad_from_block = 11
     args.epochs = 200
     args.base_model = 'vit_dino'
     args.num_workers = 4
-    args.use_ssb_splits = True
-    args.sup_con_weight = 0.35
+    args.use_ssb_splits = False
+    args.sup_con_weight = 0.15
     args.weight_decay = 5e-5
     args.contrast_unlabel_only = False
     args.transform = 'imagenet'
     args.lr = 0.1
     args.eval_funcs = ['v1', 'v2']
     args.num_unlabeled_classes_predicted = 100
-    args.warmup = 20
+    args.warmup = 1
     args.conf_new_supcon = True
     args.mini = True
 
@@ -811,7 +863,10 @@ if __name__ == "__main__":
 
     args.num_labeled_classes = len(args.train_classes)
     args.num_unlabeled_classes = len(args.unlabeled_classes)  # num_unlabeled_classes is actually = num_new_classes
-
+    args.num_unlabeled_classes_predicted = args.num_labeled_classes + args.num_unlabeled_classes
+    print(args.num_labeled_classes, args.num_unlabeled_classes, args.num_unlabeled_classes_predicted)
+    print('old classes', args.train_classes)
+    print('new classes', args.unlabeled_classes)
     init_experiment(args, runner_name=['metric_learn_gcd'])
     print(f'Using evaluation function {args.eval_funcs[0]} to print results')
 
@@ -878,6 +933,8 @@ if __name__ == "__main__":
                                                                                          test_transform,
                                                                                          args)
 
+
+    args = check_dataset_classes(train_dataset.labelled_dataset, train_dataset.unlabelled_dataset, args)
 
     # --------------------
     # SAMPLER

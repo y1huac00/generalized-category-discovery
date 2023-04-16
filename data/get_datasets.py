@@ -59,7 +59,7 @@ def get_datasets(dataset_name, train_transform, test_transform, args):
     datasets = get_dataset_f(train_transform=train_transform, test_transform=test_transform,
                             train_classes=args.train_classes,
                             prop_train_labels=args.prop_train_labels,
-                            split_train_val=False, args)
+                            split_train_val=False, args=args)
 
     # Set target transforms:
     target_transform_dict = {}
@@ -182,8 +182,8 @@ def get_class_splits(args):
 
         else:
 
-            args.train_classes = range(100)
-            args.unlabeled_classes = range(100, 200)
+            args.train_classes = range(101)
+            args.unlabeled_classes = range(101, 201)
 
     elif args.dataset_name == 'chinese_traffic_signs':
 

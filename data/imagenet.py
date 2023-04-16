@@ -98,7 +98,7 @@ def get_equal_len_datasets(dataset1, dataset2):
 
 
 def get_imagenet_100_datasets(train_transform, test_transform, train_classes=range(80),
-                           prop_train_labels=0.8, split_train_val=False, seed=0):
+                           prop_train_labels=0.8, split_train_val=False, seed=0, args=None):
 
     np.random.seed(seed)
 
@@ -110,13 +110,21 @@ def get_imagenet_100_datasets(train_transform, test_transform, train_classes=ran
 
     # Init entire training set
     imagenet_training_set = ImageNetBase(root=os.path.join(imagenet_root, 'train'), transform=train_transform)
-    whole_training_set = subsample_classes(imagenet_training_set, include_classes=subsampled_100_classes)
+    original_whole_training_set = subsample_classes(imagenet_training_set, include_classes=subsampled_100_classes)
 
     # Reset dataset
-    whole_training_set.samples = [(s[0], cls_map[s[1]]) for s in whole_training_set.samples]
-    whole_training_set.targets = [s[1] for s in whole_training_set.samples]
-    whole_training_set.uq_idxs = np.array(range(len(whole_training_set)))
-    whole_training_set.target_transform = None
+    original_whole_training_set.samples = [(s[0], cls_map[s[1]]) for s in original_whole_training_set.samples]
+    original_whole_training_set.targets = [s[1] for s in original_whole_training_set.samples]
+    original_whole_training_set.uq_idxs = np.array(range(len(original_whole_training_set)))
+    original_whole_training_set.target_transform = None
+
+
+    whole_training_set = None
+    if args.mini:
+        subsample_indices = subsample_instances(deepcopy(original_whole_training_set), prop_indices_to_subsample=0.2)
+        whole_training_set = subsample_dataset(deepcopy(original_whole_training_set), subsample_indices)
+    else:
+        whole_training_set = original_whole_training_set
 
     # Get labelled training set which has subsampled classes, then subsample some indices from that
     train_dataset_labelled = subsample_classes(deepcopy(whole_training_set), include_classes=train_classes)
@@ -131,11 +139,18 @@ def get_imagenet_100_datasets(train_transform, test_transform, train_classes=ran
 
     # Get unlabelled data
     unlabelled_indices = set(whole_training_set.uq_idxs) - set(train_dataset_labelled.uq_idxs)
-    train_dataset_unlabelled = subsample_dataset(deepcopy(whole_training_set), np.array(list(unlabelled_indices)))
+    train_dataset_unlabelled = None
+    if args.mini:
+        train_dataset_unlabelled = subsample_dataset(deepcopy(original_whole_training_set), np.array(list(unlabelled_indices)))
+    else:
+        train_dataset_unlabelled = subsample_dataset(deepcopy(whole_training_set), np.array(list(unlabelled_indices)))
 
     # Get test set for all classes
     test_dataset = ImageNetBase(root=os.path.join(imagenet_root, 'val'), transform=test_transform)
     test_dataset = subsample_classes(test_dataset, include_classes=subsampled_100_classes)
+    # if args.mini:
+    #     subsample_indices = subsample_instances(test_dataset, prop_indices_to_subsample=0.2)
+    #     test_dataset = subsample_dataset(test_dataset, subsample_indices)
 
     # Reset test set
     test_dataset.samples = [(s[0], cls_map[s[1]]) for s in test_dataset.samples]
