@@ -1,6 +1,6 @@
 from data.data_utils import MergedDataset
 
-from data.cifar import get_cifar_10_datasets, get_cifar_100_datasets
+from data.cifar import get_cifar_10_datasets, get_cifar_100_datasets, incre_cifar10_exp1
 from data.herbarium_19 import get_herbarium_datasets
 from data.stanford_cars import get_scars_datasets
 from data.imagenet import get_imagenet_100_datasets
@@ -82,6 +82,26 @@ def get_datasets(dataset_name, train_transform, test_transform, args):
     return train_dataset, test_dataset, unlabelled_train_examples_test, datasets
 
 
+def get_incre_datasets(dataset_name, train_transform, test_transform, args):
+    if dataset_name not in get_dataset_funcs.keys():
+        raise ValueError
+
+    # Get datasets
+    datasets = incre_cifar10_exp1(train_transform=train_transform, test_transform=test_transform, args=args)
+    test_dataset = datasets['test_dataset']
+    if args.step == 1:
+        train_dataset = MergedDataset(labelled_dataset=deepcopy(datasets['step0_dataset']),
+                                      unlabelled_dataset=deepcopy(datasets['step1_dataset']))
+        unlabelled_train_examples_test = deepcopy(datasets['step1_dataset'])
+        unlabelled_train_examples_test.transform = test_transform
+        return train_dataset, test_dataset, unlabelled_train_examples_test, datasets
+    elif args.step > 1:
+        train_dataset = deepcopy(datasets[f'step{args.step}_dataset'])
+        unlabelled_train_examples_test = deepcopy(datasets[f'step{args.step}_dataset'])
+        unlabelled_train_examples_test. transform = test_transform
+        return train_dataset, test_dataset, unlabelled_train_examples_test, datasets
+
+
 def get_class_splits(args):
 
     # For FGVC datasets, optionally return bespoke splits
@@ -96,9 +116,14 @@ def get_class_splits(args):
     # -------------
     if args.dataset_name == 'cifar10':
 
-        args.image_size = 32
-        args.train_classes = range(5)
-        args.unlabeled_classes = range(5, 10)
+        if args.incre_exp == 1:
+            args.C_step0 = [0, 1, 2, 3, 4]
+            args.C_step1 = [0,1,2,3,5,6,7]
+            args.C_step2 = [0,1,4,7,8,9]
+        else:
+            args.image_size = 32
+            args.train_classes = range(5)
+            args.unlabeled_classes = range(5, 10)
 
     elif args.dataset_name == 'cifar100':
 

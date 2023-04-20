@@ -12,6 +12,7 @@ from project_utils.cluster_utils import mixed_eval, AverageMeter
 from models import vision_transformer as vits
 
 from project_utils.general_utils import init_experiment, get_mean_lr, str2bool, get_dino_head_weights
+from project_utils.cluster_utils import cluster_acc
 
 from data.augmentations import get_transform
 from data.get_datasets import get_datasets, get_class_splits
@@ -324,6 +325,20 @@ def train(projection_head, model, train_loader, test_loader, unlabelled_train_lo
 
                 # TODO: if step > 1, concatenate mean and variance for 1) recognized old classes samples, 2) confident new class samples
 
+
+def conf_sample_acc(unlabeled_conf_idx, unlabeled_conf_ground_truth, unlabeled_cluster_uq_idx, unlabeled_cluster_preds):
+    cluster_idx = unlabeled_cluster_uq_idx.tolist()
+    t = np.array([])
+    unlabeled_conf_ground_truth = unlabeled_conf_ground_truth.detach().cpu().numpy()
+    unlabeled_cluster_preds = unlabeled_cluster_preds.to(torch.int).detach().cpu().numpy()
+
+    for i in unlabeled_conf_idx:
+        t = np.append(t, unlabeled_cluster_preds[cluster_idx.index(i)])
+
+    return cluster_acc(unlabeled_conf_ground_truth, t.astype(int))
+
+
+
 def train_new(projection_head, model, train_loader, test_loader, unlabelled_train_loader, args,
               train_loader_labeled):
     optimizer = SGD(list(projection_head.parameters()) + list(model.parameters()), lr=args.lr, momentum=args.momentum,
@@ -356,26 +371,37 @@ def train_new(projection_head, model, train_loader, test_loader, unlabelled_trai
     mask_new_unlabeled = []
     mask_confident_new_unlabeled = []
     unlabeled_cluster_preds = []
-
+    unlabeled_cluster_uq_idx_dic = {}
     for epoch in range(args.epochs):
 
         loss_record = AverageMeter()
         train_acc_record = AverageMeter()
+        sup_con_record = AverageMeter()
 
         projection_head.train()
         model.train()
 
-        unlabeled_st_idx = 0
-        unlabeled_batch_size = 0
-        new_st_idx = 0
-        new_batch_size = 0
+        # unlabeled_st_idx = 0
+        # unlabeled_batch_size = 0
+        # new_st_idx = 0
+        # new_batch_size = 0
+        unlabeled_conf_idx = []
+        unlabeled_all_idx = torch.Tensor([]).to(device)
+        unlabeled_ground_truth = torch.Tensor([]).to(device)
+        unlabeled_conf_ground_truth = torch.Tensor([]).to(device)
+
         for batch_idx, batch in enumerate(tqdm(train_loader)):
 
             images, class_labels, uq_idxs, mask_lab = batch
             mask_lab = mask_lab[:, 0]
+            uq_idxs = uq_idxs.to(device)
 
             class_labels, mask_lab = class_labels.to(device), mask_lab.to(device).bool()
             images = torch.cat(images, dim=0).to(device)  # 2 Views [[bs, 3, 224, 224], [bs, 3, 224, 224]] --> [2*bs, 3, 224, 224]
+
+            if(epoch + 1) % args.warmup == 0:
+                unlabeled_all_idx = torch.cat([unlabeled_all_idx, uq_idxs[~mask_lab]], dim=0)
+                unlabeled_ground_truth = torch.cat([unlabeled_ground_truth, class_labels[~mask_lab]], dim=0)
 
             # Extract features with base model
             features = model(images)  # [bs, 768]
@@ -394,8 +420,8 @@ def train_new(projection_head, model, train_loader, test_loader, unlabelled_trai
             else:
                 # Contrastive loss for all examples
                 con_feats = features
-                f1, f2 = [f[~mask_lab] for f in features.chunk(2)]
-                unlabeled_batch_size = unlabeled_batch_size + f1.size(dim=0)
+                # f1, f2 = [f[~mask_lab] for f in features.chunk(2)]
+                # unlabeled_batch_size = unlabeled_batch_size + f1.size(dim=0)
 
             contrastive_logits, contrastive_labels = info_nce_logits(features=con_feats, args=args)
             contrastive_loss = torch.nn.CrossEntropyLoss()(contrastive_logits, contrastive_labels)
@@ -405,28 +431,49 @@ def train_new(projection_head, model, train_loader, test_loader, unlabelled_trai
             sup_con_feats = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)  # [labeled samples * 2, 65536]
             sup_con_labels = class_labels[mask_lab]  # [labeled samples]
 
-            sup_con_loss = sup_con_crit(sup_con_feats, labels=sup_con_labels)
+            sup_con_loss = 0.0
+            if sup_con_labels.size(dim=0) != 0:
+                sup_con_loss = sup_con_crit(sup_con_feats, labels=sup_con_labels)
 
             # sup contrastive loss for confident samples of new classes
             conf_sup_con_loss = 0.0
             if epoch >= args.warmup:
-                conf_labels = class_labels[~mask_lab]
-                conf_labels = conf_labels[mask_new_unlabeled[unlabeled_st_idx:unlabeled_batch_size]]
-                new_batch_size = new_batch_size+conf_labels.size(dim=0)
-                conf_labels = conf_labels[mask_confident_new_unlabeled[new_st_idx:new_batch_size]]
-
+                conf_labels = torch.Tensor([]).to(device)
+                true_labels = torch.Tensor([]).to(device)
+                sup_conf_feats1 = torch.Tensor([]).to(device)
+                sup_conf_feats2 = torch.Tensor([]).to(device)
+                sup_conf_feats2 = torch.Tensor([]).to(device)
                 f1, f2 = [f[~mask_lab] for f in features.chunk(2)]
-                sup_conf_feats = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)  # [labeled samples * 2, 65536]
-                sup_conf_feats = sup_conf_feats[mask_new_unlabeled[unlabeled_st_idx:unlabeled_batch_size]]
-                sup_conf_feats = sup_conf_feats[mask_confident_new_unlabeled[new_st_idx:new_batch_size]]
+                class_lab_ = class_labels[~mask_lab]
+                un_uq_idx = uq_idxs[~mask_lab]
+                for idx, i in enumerate(un_uq_idx.tolist()):
+                    if i in unlabeled_cluster_uq_idx_dic.keys():
+                        conf_labels = torch.cat([conf_labels, unlabeled_cluster_preds[unlabeled_cluster_uq_idx_dic[i]].reshape(1)], dim=0)
+                        sup_conf_feats1 = torch.cat([sup_conf_feats1, f1[idx].unsqueeze(0)], dim=0)
+                        sup_conf_feats2 = torch.cat([sup_conf_feats2, f2[idx].unsqueeze(0)], dim=0)
+                        true_labels = torch.cat([true_labels, class_lab_[idx].reshape(1)],dim=0)
+                        unlabeled_conf_ground_truth = torch.cat([unlabeled_conf_ground_truth, class_lab_[idx].reshape(1)], dim=0)
+                        unlabeled_conf_idx.append(i)
+
+                # true_labels = class_labels[~mask_lab]
+                # true_labels = true_labels[mask_new_unlabeled[unlabeled_st_idx:unlabeled_batch_size]]
+                # conf_labels = unlabeled_cluster_preds[unlabeled_st_idx:unlabeled_batch_size][mask_new_unlabeled[unlabeled_st_idx:unlabeled_batch_size]]
+                # new_batch_size = new_batch_size+conf_labels.size(dim=0)
+                # true_labels = true_labels[mask_confident_new_unlabeled[new_st_idx:new_batch_size]]
+                # conf_labels = conf_labels[mask_confident_new_unlabeled[new_st_idx:new_batch_size]]
+
+                # f1, f2 = [f[~mask_lab] for f in features.chunk(2)]
+                sup_conf_feats = torch.cat([sup_conf_feats1.unsqueeze(1), sup_conf_feats2.unsqueeze(1)], dim=1)  # [labeled samples * 2, 65536]
+                # sup_conf_feats = sup_conf_feats[mask_new_unlabeled[unlabeled_st_idx:unlabeled_batch_size]]
+                # sup_conf_feats = sup_conf_feats[mask_confident_new_unlabeled[new_st_idx:new_batch_size]]
                 if conf_labels.size(dim=0) != 0:
                     conf_sup_con_loss = sup_con_crit(sup_conf_feats, labels=conf_labels)
-                unlabeled_st_idx = unlabeled_batch_size
-                new_st_idx = new_batch_size
+                # unlabeled_st_idx = unlabeled_batch_size
+                # new_st_idx = new_batch_size
 
             # Total loss
             if epoch >= args.warmup:
-                loss = (1 - args.sup_con_weight) * contrastive_loss + (args.sup_con_weight) * (sup_con_loss + conf_sup_con_loss)
+                loss = (1 - args.sup_con_weight-0.1) * contrastive_loss + (args.sup_con_weight+0.1) * (sup_con_loss + conf_sup_con_loss)
             else:
                 loss = (1 - args.sup_con_weight) * contrastive_loss + args.sup_con_weight * sup_con_loss
 
@@ -443,12 +490,16 @@ def train_new(projection_head, model, train_loader, test_loader, unlabelled_trai
         print('Train Epoch: {} Avg Loss: {:.4f} | Seen Class Acc: {:.4f} '.format(epoch, loss_record.avg,
                                                                                   train_acc_record.avg))
 
+        if epoch % args.warmup == 0 and epoch != 0:
+
+            print('conf cluster acc:', conf_sample_acc(unlabeled_conf_idx, unlabeled_conf_ground_truth, unlabeled_cluster_uq_idx, unlabeled_cluster_preds))
+
         with torch.no_grad():
 
             print('Testing on unlabelled examples in the training data...')
-            if(epoch + 1) % args.warmup == 0:
-            # if epoch == args.warmup - 1:
-                all_acc, old_acc, new_acc, cluster_centers_unlabeled, unlabeled_cluster_preds, unlabeled_feats = test_kmeans(model, unlabelled_train_loader,
+            # if(epoch + 1) % args.warmup == 0:
+            if epoch == args.warmup - 1:
+                all_acc, old_acc, new_acc, cluster_centers_unlabeled, unlabeled_cluster_preds, unlabeled_feats, unlabeled_cluster_uq_idx = test_kmeans(model, unlabelled_train_loader,
                                                                                    epoch=epoch,
                                                                                    save_name='Train ACC Unlabelled',
                                                                                    args=args, predsfeats=True)
@@ -490,8 +541,8 @@ def train_new(projection_head, model, train_loader, test_loader, unlabelled_trai
             # if epoch == 0:
             #     means_feat_proto_5, _ = generate_mean_var(model, train_loader_labeled, args)
             #     cluster_centers_unlabeled_5 = cluster_centers_unlabeled
-            if(epoch + 1) % args.warmup == 0:
-            # if epoch == args.warmup - 1:
+            # if(epoch + 1) % args.warmup == 0:
+            if epoch == args.warmup - 1:
                 means_feat_proto_10, _ = generate_mean_var(model, train_loader_labeled, args)
                 cluster_centers_unlabeled_10 = cluster_centers_unlabeled
                 # for i in means_feat_proto_5.keys():
@@ -522,19 +573,21 @@ def train_new(projection_head, model, train_loader, test_loader, unlabelled_trai
                 #                 print(f'10cluster {idx} - 5cluster {idx_}, old class {j}, cs {cs}, dist {dist_10}')
                 #                 C_old.append(j)  # cluster idx is an old class, so j is in C_old
                 #                 idx_old.append(idx)
+                opop = []
                 for idx, cluster in enumerate(cluster_centers_unlabeled_10):
                     for j in means_feat_proto_10.keys():
                         dist_10 = pdist(cluster, means_feat_proto_10[j])
+                        opop.append([j, idx, dist_10])
                         # print(j, idx, dist_10)
-                        if dist_10 < 0.2:
+                        if dist_10 < args.dist:
                             candidates.append([j,idx,dist_10])
                             # if j not in C_old and idx not in idx_old:
                             #     C_old.append(j)
                             #     idx_old.append(idx)
-                print('candidates', candidates)
-
+                print('all', sorted(opop,key=itemgetter(2)))
                 # Find old clusters
                 candidates = sorted(candidates, key=itemgetter(2))
+                print('candidates', candidates)
                 for candidate in candidates:
                     if candidate[0] not in C_old and candidate[1] not in idx_old and len(C_old) <= len(C_star_previous):
                         C_old.append(candidate[0])
@@ -546,14 +599,31 @@ def train_new(projection_head, model, train_loader, test_loader, unlabelled_trai
                 C_new = [(new_st + i) for i in range(num_C - len(C_old))]
                 C_star = C_star_previous + C_new
 
-                idx_new = [i for i in range(len(cluster_centers_unlabeled_10)) if i not in idx_old]
-                mask_new_unlabeled = [True if i in idx_new else False for i in unlabeled_cluster_preds]
-                unlabeled_new_feats = unlabeled_feats[mask_new_unlabeled]
-                unlabeled_new_preds = unlabeled_cluster_preds[mask_new_unlabeled]
+                unlabeled_feats = torch.Tensor(unlabeled_feats).to(device)
+                unlabeled_cluster_preds = torch.Tensor(unlabeled_cluster_preds).to(torch.int).to(device)
 
+                if args.conf_only_new:
+                    idx_new = [i for i in range(len(cluster_centers_unlabeled_10)) if i not in idx_old]
+                    mask_new_unlabeled = [True if i in idx_new else False for i in unlabeled_cluster_preds]
+                    unlabeled_new_feats = unlabeled_feats[mask_new_unlabeled]
+                    unlabeled_new_preds = unlabeled_cluster_preds[mask_new_unlabeled]
 
-                mask_confident_new_unlabeled = get_mask_confident_new_unlabeled(cluster_centers_unlabeled_10, unlabeled_new_feats, unlabeled_new_preds)
+                    mask_confident_new_unlabeled = get_mask_confident_new_unlabeled(cluster_centers_unlabeled_10, unlabeled_new_feats, unlabeled_new_preds, args)
 
+                    unlabeled_cluster_uq_idx = torch.Tensor(unlabeled_cluster_uq_idx).to(torch.int).to(device)
+                    unlabeled_cluster_uq_idx = unlabeled_cluster_uq_idx[mask_new_unlabeled]
+                    unlabeled_cluster_uq_idx = unlabeled_cluster_uq_idx[mask_confident_new_unlabeled]
+
+                else:
+                    mask_confident_all_unlabeled = get_mask_confident_new_unlabeled(cluster_centers_unlabeled_10, unlabeled_feats, unlabeled_cluster_preds, args)
+
+                    unlabeled_cluster_uq_idx = torch.Tensor(unlabeled_cluster_uq_idx).to(torch.int).to(device)
+                    unlabeled_cluster_uq_idx = unlabeled_cluster_uq_idx[mask_confident_all_unlabeled]
+                    unlabeled_cluster_preds = unlabeled_cluster_preds[mask_confident_all_unlabeled]
+
+                unlabeled_cluster_uq_idx_dic = {}
+                for idx, i in enumerate(unlabeled_cluster_uq_idx):
+                    unlabeled_cluster_uq_idx_dic[i.item()] = idx
 
 
 
@@ -600,16 +670,14 @@ def train_new(projection_head, model, train_loader, test_loader, unlabelled_trai
                 # TODO: if step > 1, concatenate mean and variance for 1) recognized old classes samples, 2) confident new class samples
 
 
-def get_mask_confident_new_unlabeled(cluster_centers_unlabeled_10, unlabeled_new_feats, unlabeled_new_preds):
+def get_mask_confident_new_unlabeled(cluster_centers_unlabeled_10, unlabeled_new_feats, unlabeled_new_preds, args):
     idx_confident = []
     pdist = torch.nn.PairwiseDistance(p=2)
-    unlabeled_new_feats = torch.Tensor(unlabeled_new_feats).to(device)
-    unlabeled_new_preds = torch.Tensor(unlabeled_new_preds).to(device)
     indices = torch.range(0, unlabeled_new_preds.size(dim=0)-1).to(device)
     for idx, cluster_center in enumerate(cluster_centers_unlabeled_10):
         feats = unlabeled_new_feats[unlabeled_new_preds == idx]
         idx_indices = indices[unlabeled_new_preds == idx]
-        N = round(0.2*idx_indices.size(dim=0))
+        N = round(args.conf_thres*idx_indices.size(dim=0))
         dist = pdist(cluster_center, feats)
         conf_idx = torch.argsort(dist)[:N]
         idx_confident.extend([idx_indices[j] for j in conf_idx])
@@ -706,10 +774,11 @@ def test_kmeans(model, test_loader,
     all_feats = []
     targets = np.array([])
     mask = np.array([])
+    whole_idx = np.array([])
 
     print('Collating features...')
     # First extract all features
-    for batch_idx, (images, label, _) in enumerate(tqdm(test_loader)):
+    for batch_idx, (images, label, uq_idx) in enumerate(tqdm(test_loader)):
         images = images.cuda()
 
         # Pass features through base model and then additional learnable transform (linear layer)
@@ -721,6 +790,7 @@ def test_kmeans(model, test_loader,
         targets = np.append(targets, label.cpu().numpy())
         mask = np.append(mask, np.array([True if x.item() in range(len(args.labeled_classes))
                                          else False for x in label]))
+        whole_idx = np.append(whole_idx, uq_idx)
 
     # -----------------------
     # K-MEANS
@@ -740,7 +810,7 @@ def test_kmeans(model, test_loader,
                                                     writer=args.writer)
 
     if predsfeats:
-        return all_acc, old_acc, new_acc, cluster_centers, preds, all_feats
+        return all_acc, old_acc, new_acc, cluster_centers, preds, all_feats, whole_idx
     else:
         return all_acc, old_acc, new_acc, cluster_centers
 
@@ -833,7 +903,9 @@ if __name__ == "__main__":
     parser.add_argument('--warmup', type=int, default=10)  # divisible by 2
     parser.add_argument('--conf_new_supcon', type=bool, default=True)
     parser.add_argument('--mini', type=bool, default=False)
-
+    parser.add_argument('--conf_only_new', type=bool, default=False)
+    parser.add_argument('--dist', type=float, default=0.3)
+    parser.add_argument('--conf_thres',type=float, default=0.2)
 
     # ----------------------
     # INIT
@@ -841,23 +913,27 @@ if __name__ == "__main__":
     args = parser.parse_args()
     device = torch.device('cuda:0')
 
-    args.dataset_name = 'cub'
-    args.batch_size = 128
+    args.dataset_name = 'cifar10'
+    args.batch_size = 256
     args.grad_from_block = 11
     args.epochs = 200
     args.base_model = 'vit_dino'
     args.num_workers = 4
     args.use_ssb_splits = False
-    args.sup_con_weight = 0.15
+    args.sup_con_weight = 0.2
     args.weight_decay = 5e-5
     args.contrast_unlabel_only = False
     args.transform = 'imagenet'
     args.lr = 0.1
     args.eval_funcs = ['v1', 'v2']
-    args.num_unlabeled_classes_predicted = 100
-    args.warmup = 1
+    args.num_unlabeled_classes_predicted = 10
+    args.warmup = 20
     args.conf_new_supcon = True
     args.mini = True
+    args.incre_exp = 0
+    args.conf_only_new = False
+    args.dist = 0.3
+    args.conf_thres = 0.6
 
     args = get_class_splits(args)
 
@@ -939,6 +1015,7 @@ if __name__ == "__main__":
     # --------------------
     # SAMPLER
     # Sampler which balances labelled and unlabelled examples in each batch
+    # Replaced Due to
     # --------------------
     label_len = len(train_dataset.labelled_dataset)
     unlabelled_len = len(train_dataset.unlabelled_dataset)
