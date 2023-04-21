@@ -473,7 +473,7 @@ def train_new(projection_head, model, train_loader, test_loader, unlabelled_trai
 
             # Total loss
             if epoch >= args.warmup:
-                loss = (1 - args.sup_con_weight-0.1) * contrastive_loss + (args.sup_con_weight+0.1) * (sup_con_loss + conf_sup_con_loss)
+                loss = (1 - args.sup_con_weight-0.2) * contrastive_loss + (args.sup_con_weight+0.2) * (sup_con_loss + conf_sup_con_loss)
             else:
                 loss = (1 - args.sup_con_weight) * contrastive_loss + args.sup_con_weight * sup_con_loss
 
@@ -498,7 +498,7 @@ def train_new(projection_head, model, train_loader, test_loader, unlabelled_trai
 
             print('Testing on unlabelled examples in the training data...')
             # if(epoch + 1) % args.warmup == 0:
-            if epoch == args.warmup - 1:
+            if epoch == args.warmup - 1 or epoch == 79 or epoch == 139:
                 all_acc, old_acc, new_acc, cluster_centers_unlabeled, unlabeled_cluster_preds, unlabeled_feats, unlabeled_cluster_uq_idx = test_kmeans(model, unlabelled_train_loader,
                                                                                    epoch=epoch,
                                                                                    save_name='Train ACC Unlabelled',
@@ -542,7 +542,7 @@ def train_new(projection_head, model, train_loader, test_loader, unlabelled_trai
             #     means_feat_proto_5, _ = generate_mean_var(model, train_loader_labeled, args)
             #     cluster_centers_unlabeled_5 = cluster_centers_unlabeled
             # if(epoch + 1) % args.warmup == 0:
-            if epoch == args.warmup - 1:
+            if epoch == args.warmup - 1 or epoch == 79 or epoch == 139:
                 means_feat_proto_10, _ = generate_mean_var(model, train_loader_labeled, args)
                 cluster_centers_unlabeled_10 = cluster_centers_unlabeled
                 # for i in means_feat_proto_5.keys():
@@ -617,6 +617,7 @@ def train_new(projection_head, model, train_loader, test_loader, unlabelled_trai
                 else:
                     mask_confident_all_unlabeled = get_mask_confident_new_unlabeled(cluster_centers_unlabeled_10, unlabeled_feats, unlabeled_cluster_preds, args)
 
+                    args.conf_thres = args.conf_thres + 0.1
                     unlabeled_cluster_uq_idx = torch.Tensor(unlabeled_cluster_uq_idx).to(torch.int).to(device)
                     unlabeled_cluster_uq_idx = unlabeled_cluster_uq_idx[mask_confident_all_unlabeled]
                     unlabeled_cluster_preds = unlabeled_cluster_preds[mask_confident_all_unlabeled]
@@ -913,8 +914,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
     device = torch.device('cuda:0')
 
-    args.dataset_name = 'cifar10'
-    args.batch_size = 256
+    args.dataset_name = 'cifar100'
+    args.batch_size = 128
     args.grad_from_block = 11
     args.epochs = 200
     args.base_model = 'vit_dino'
@@ -926,14 +927,14 @@ if __name__ == "__main__":
     args.transform = 'imagenet'
     args.lr = 0.1
     args.eval_funcs = ['v1', 'v2']
-    args.num_unlabeled_classes_predicted = 10
+    args.num_unlabeled_classes_predicted = 100
     args.warmup = 20
     args.conf_new_supcon = True
     args.mini = True
     args.incre_exp = 0
     args.conf_only_new = False
-    args.dist = 0.3
-    args.conf_thres = 0.6
+    args.dist = 0.4
+    args.conf_thres = 0.5
 
     args = get_class_splits(args)
 
