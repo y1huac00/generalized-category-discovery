@@ -9,6 +9,19 @@ from tensorboard.backend.event_processing.event_accumulator import EventAccumula
 
 from datetime import datetime
 
+def PairEnum(x,mask=None):
+    # Enumerate all pairs of feature in x
+    assert x.ndimension() == 2, 'Input dimension must be 2'
+    x1 = x.repeat(x.size(0), 1)
+    x2 = x.repeat(1, x.size(0)).view(-1, x.size(1))
+    if mask is not None:
+        xmask = mask.view(-1,1).repeat(1,x.size(1))
+        #dim 0: #sample, dim 1:#feature
+        x1 = x1[xmask].view(-1,x.size(1))
+        x2 = x2[xmask].view(-1,x.size(1))
+    return x1,x2
+
+
 class AverageMeter(object):
     """Computes and stores the average and current value"""
     def __init__(self):
@@ -137,12 +150,12 @@ def init_experiment(args, runner_name=None, exp_id=None):
     if exp_id is None:
 
         # Unique identifier for experiment
-        now = '({:02d}.{:02d}.{}_|_'.format(datetime.now().day, datetime.now().month, datetime.now().year) + \
+        now = '({:02d}.{:02d}.{}__'.format(datetime.now().day, datetime.now().month, datetime.now().year) + \
               datetime.now().strftime("%S.%f")[:-3] + ')'
 
         log_dir = os.path.join(root_dir, 'log', now)
         while os.path.exists(log_dir):
-            now = '({:02d}.{:02d}.{}_|_'.format(datetime.now().day, datetime.now().month, datetime.now().year) + \
+            now = '({:02d}.{:02d}.{}__'.format(datetime.now().day, datetime.now().month, datetime.now().year) + \
                   datetime.now().strftime("%S.%f")[:-3] + ')'
 
             log_dir = os.path.join(root_dir, 'log', now)

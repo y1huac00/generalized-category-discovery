@@ -1,6 +1,6 @@
 from data.data_utils import MergedDataset
 
-from data.cifar import get_cifar_10_datasets, get_cifar_100_datasets, incre_cifar10_exp1
+from data.cifar import get_cifar_10_datasets, get_cifar_100_datasets, incre_cifar10_exp1, incre_cifar100_exp1, incre_cifar100_exp2
 from data.herbarium_19 import get_herbarium_datasets
 from data.stanford_cars import get_scars_datasets
 from data.imagenet import get_imagenet_100_datasets
@@ -87,7 +87,13 @@ def get_incre_datasets(dataset_name, train_transform, test_transform, args):
         raise ValueError
 
     # Get datasets
-    datasets = incre_cifar10_exp1(train_transform=train_transform, test_transform=test_transform, args=args)
+    if dataset_name == 'cifar10':
+        datasets = incre_cifar10_exp1(train_transform=train_transform, test_transform=test_transform, args=args)
+    elif dataset_name == 'cifar100':
+        if args.incre_exp == 1:
+            datasets = incre_cifar100_exp1(train_transform=train_transform, test_transform=test_transform, args=args)
+        elif args.incre_exp == 2:
+            datasets = incre_cifar100_exp2(train_transform=train_transform, test_transform=test_transform, args=args)
     test_dataset = datasets['test_dataset']
     if args.step == 1:
         train_dataset = MergedDataset(labelled_dataset=deepcopy(datasets['step0_dataset']),
@@ -126,10 +132,18 @@ def get_class_splits(args):
             args.unlabeled_classes = range(5, 10)
 
     elif args.dataset_name == 'cifar100':
-
-        args.image_size = 32
-        args.train_classes = range(80)
-        args.unlabeled_classes = range(80, 100)
+        if args.incre_exp == 1:
+            args.C_step0 = list(range(80))
+            args.C_step1 = list(range(10,90))
+            args.C_step2 = list(range(20,100))
+        elif args.incre_exp == 2:
+            args.C_step0 = list(range(20))
+            args.C_step1 = list(range(0,40))
+            args.C_step2 = list(range(20,60))
+        else:
+            args.image_size = 32
+            args.train_classes = range(80)
+            args.unlabeled_classes = range(80, 100)
 
     elif args.dataset_name == 'tinyimagenet':
 

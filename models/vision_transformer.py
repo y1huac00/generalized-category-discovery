@@ -239,6 +239,9 @@ class VisionTransformer(nn.Module):
                 output.append(self.norm(x))
         return output
 
+    def save_means(self, saved_whole):
+        self.saved_whole = saved_whole
+
 
 def vit_tiny(patch_size=16, **kwargs):
     model = VisionTransformer(
